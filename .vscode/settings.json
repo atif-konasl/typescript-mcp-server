@@ -1,5 +1,4 @@
 {
   "vitest.nodeExecutable": "/Users/atifanowar/.asdf/shims/node",
-  "vitest.rootConfig": "./vitest.config.ts",
-  "vitest.enable": true
+  "vitest.rootConfig": "./vitest.config.ts"
 }

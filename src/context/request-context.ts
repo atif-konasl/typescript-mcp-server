@@ -1,21 +1,22 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface AgentSession {
-    token: string;
-    userId: string;
-    supplierId: string;
-    scopes: string[];
+    token: string
+    userId: string
+    supplierId: string
+    scopes: string[]
+    expiresAt: number | undefined
 }
 
-const storage = new AsyncLocalStorage<AgentSession>();
+const storage = new AsyncLocalStorage<AgentSession>()
 
 export const RequestContext = {
-    run<T>(session: AgentSession, callback: () => Promise<T>): Promise<T> {
+    run<T>(session: AgentSession, callback: () => T): T {
         return storage.run(session, callback)
     },
 
     current(): AgentSession | undefined {
-        return storage.getStore();
+        return storage.getStore()
     },
 
     require(): AgentSession {
