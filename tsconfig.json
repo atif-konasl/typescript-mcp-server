@@ -4,8 +4,13 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "lib": ["es2022"],
+    "ignoreDeprecations": "6.0",
     "outDir": "./dist",
     "rootDir": "./",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

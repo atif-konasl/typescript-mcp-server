@@ -1,283 +1,257 @@
-# 04. Outbound S2S OAuth Client Credentials Flow
+# 04. Outbound S2S OAuth & OpenAPI Client Architecture
 
-In this chapter, you will implement the outbound authentication mechanism. When your MCP tools need to query or update data in the upstream supplier backend, the MCP server must authenticate as an authorized service using the **OAuth 2.0 Client Credentials Grant** (RFC 6749 §4.4).
+In this chapter, you will implement the outbound communication layer between your MCP server and the upstream supplier service.
+
+When an AI agent invokes an MCP tool (such as `list_offers` or `get_offer_by_id`), the MCP server acts as an authorized client. It must:
+1. Obtain an Outbound S2S Bearer token via **OAuth 2.0 Client Credentials Grant** (RFC 6749 §4.4).
+2. Call the upstream supplier APIs using a strongly-typed **OpenAPI client** (`openapi-client-axios`).
 
 ---
 
-## 🔑 Understanding the S2S Client Credentials Flow
-
-Unlike user-facing authorization (Authorization Code grant), **Client Credentials** is designed for machine-to-machine (M2M) communication where no human is directly logging in:
+## 🏛️ End-to-End Outbound Architecture
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as SupplierClient (MCP Server)
-    participant Provider as ClientCredentialsTokenProvider
-    participant OAuth as Upstream OAuth /token Endpoint
-    participant API as Upstream Supplier API
+    participant Tool as MCP Tool (e.g. list_offers)
+    participant Client as OffersClient (OpenAPI Axios Client)
+    participant Interceptor as Axios Token Interceptor
+    participant OAuth as Upstream OAuth (/oauth/token)
+    participant API as Upstream Supplier API (/s2s/v1/offers)
 
-    Client->>Provider: getAccessToken()
-    alt Token in cache & not expired
-        Provider-->>Client: return cached_token
+    Tool->>Client: client.listOffers({ 'filter[supplier_id]': 'supp-100' })
+    Client->>Interceptor: Intercept outgoing request config
+    
+    alt S2S Token cached & valid (TTL > 30s)
+        Note over Interceptor: Reuse cached token
     else Token missing or expired
-        Note over Provider: Concurrency lock / Deduplication
-        Provider->>OAuth: POST /oauth/token<br/>(grant_type=client_credentials, Basic client_id:client_secret)
-        OAuth-->>Provider: { access_token: "xyz", expires_in: 3600 }
-        Note over Provider: Cache token with 60s clock skew
-        Provider-->>Client: return new_token
+        Interceptor->>OAuth: POST /oauth/token (grant_type=client_credentials)
+        OAuth-->>Interceptor: { access_token: "s2s-xyz", expires_in: 3600 }
+        Note over Interceptor: Cache token with 30s grace period
     end
 
-    Client->>API: GET /s2s/v1/offers/off-101<br/>Header: Authorization: Bearer xyz
-    API-->>Client: 200 OK { id: "off-101", ... }
+    Note over Interceptor: Inject Header: Authorization: Bearer s2s-xyz
+    Interceptor->>API: GET /s2s/v1/offers?filter[supplier_id]=supp-100
+    API-->>Client: 200 OK { items: [...], total: 4 }
+    Client-->>Tool: Typed OpenAPI response payload
 ```
 
 ---
 
-## 🏗️ Implementing `ClientCredentialsTokenProvider`
+## 🔑 Part 1: S2S OAuth Client Credentials Interceptor
 
-Your token provider must handle three critical responsibilities:
+Instead of manually writing low-level `fetch` wrappers and managing token cache expiration by hand, the outbound auth mechanism uses the **Axios Request Interceptor Pattern** powered by `axios-oauth-client` and `axios-token-interceptor`.
 
-1. **Clock Skew Margin**: Refresh the token _before_ it actually expires (e.g., 60 seconds earlier) to ensure requests in transit never fail due to token expiry.
-2. **Concurrency / Thundering Herd Prevention**: If 10 MCP tool requests arrive at the exact moment the cached token expires, your server should **not** make 10 simultaneous POST requests to `/oauth/token`. Instead, it should execute 1 token request and let all 10 callers await the same promise.
-3. **Invalidation**: If the upstream API returns a 401 Unauthorized (e.g. server-side token revocation), allow callers to clear the cache and force a fresh token fetch.
-
-### TypeScript Concurrency Pattern: Promise Deduplication
-
-In Python, `asyncio.Lock()` is typically used. In TypeScript, an idiomatic pattern is **In-Flight Promise Sharing**:
+### File Location: `src/auth/client-credentials.ts`
 
 ```typescript
-// Blueprint for src/oauth/client-credentials.ts
-interface CachedToken {
-  accessToken: string
-  expiresAt: number // Unix timestamp in milliseconds
+import axios, { type InternalAxiosRequestConfig } from "axios"
+import { clientCredentials } from "axios-oauth-client"
+import axiosTokenProvider from "axios-token-interceptor"
+
+export interface OAuthClientCredentialsOptions {
+  readonly tokenUrl: string
+  readonly clientId: string
+  readonly clientSecret: string
+  readonly scope?: string
+  readonly gracePeriodSeconds?: number
 }
 
-export class ClientCredentialsTokenProvider {
-  private cache: CachedToken | null = null
-  private pendingPromise: Promise<string> | null = null
-
-  constructor(
-    private tokenUrl: string,
-    private clientId: string,
-    private clientSecret: string,
-    private scope?: string,
-    private clockSkewSeconds: number = 60,
-  ) {}
-
-  async getAccessToken(): Promise<string> {
-    const now = Date.now()
-
-    // 1. Return valid cached token if available
-    if (this.cache && this.cache.expiresAt > now) {
-      return this.cache.accessToken
-    }
-
-    // 2. Prevent thundering herds: reuse in-flight token request
-    if (this.pendingPromise) {
-      return this.pendingPromise
-    }
-
-    // 3. Initiate token fetch
-    this.pendingPromise = this.fetchNewToken().finally(() => {
-      this.pendingPromise = null
-    })
-
-    return this.pendingPromise
-  }
-
-  private async fetchNewToken(): Promise<string> {
-    const basicAuth = Buffer.from(
-      `${this.clientId}:${this.clientSecret}`,
-    ).toString("base64")
-
-    const body = new URLSearchParams({
-      grant_type: "client_credentials",
-    })
-    if (this.scope) {
-      body.append("scope", this.scope)
-    }
-
-    const response = await fetch(this.tokenUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${basicAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body,
-      signal: AbortSignal.timeout(10000), // 10s timeout
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(
-        `Failed to obtain client credentials token: ${response.status} - ${errorText}`,
-      )
-    }
-
-    const data = (await response.json()) as {
-      access_token: string
-      expires_in?: number
-    }
-    if (!data.access_token) {
-      throw new Error("OAuth token response did not contain access_token")
-    }
-
-    const expiresInSeconds = data.expires_in ?? 300
-    const ttlSeconds = Math.max(expiresInSeconds - this.clockSkewSeconds, 30)
-
-    this.cache = {
-      accessToken: data.access_token,
-      expiresAt: Date.now() + ttlSeconds * 1000,
-    }
-
-    return this.cache.accessToken
-  }
-
-  invalidate(): void {
-    this.cache = null
-  }
-}
-```
-
----
-
-## 🌐 The Upstream Base Client with 401 Retry
-
-When communicating with upstream services, a `BaseClient` encapsulates:
-
-- Attaching `Authorization: Bearer <token>`.
-- Setting sensible timeouts (`AbortSignal.timeout(...)`).
-- Catching unexpected `401 Unauthorized` responses, calling `provider.invalidate()`, and retrying once.
-
-### Blueprint: `src/clients/base-client.ts`
-
-```typescript
-import { ClientCredentialsTokenProvider } from "../oauth/client-credentials.js"
-
-export abstract class BaseClient {
-  constructor(
-    protected baseUrl: string,
-    protected tokenProvider: ClientCredentialsTokenProvider,
-  ) {}
-
-  protected async request<T>(
-    path: string,
-    options: RequestInit = {},
-  ): Promise<T> {
-    const url = new URL(path, this.baseUrl).toString()
-    const headers = new Headers(options.headers)
-    headers.set("Accept", "application/json")
-
-    // 1. Inject Bearer token
-    let token = await this.tokenProvider.getAccessToken()
-    headers.set("Authorization", `Bearer ${token}`)
-
-    let response = await fetch(url, {
-      ...options,
-      headers,
-      signal: options.signal ?? AbortSignal.timeout(15000),
-    })
-
-    // 2. Automatic retry on 401 Unauthorized
-    if (response.status === 401) {
-      console.warn(
-        "Upstream returned 401. Invalidating token and retrying once...",
-      )
-      this.tokenProvider.invalidate()
-      token = await this.tokenProvider.getAccessToken()
-      headers.set("Authorization", `Bearer ${token}`)
-
-      response = await fetch(url, {
-        ...options,
-        headers,
-        signal: options.signal ?? AbortSignal.timeout(15000),
-      })
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text()
-      const error = new Error(
-        `Upstream request failed: ${response.status} ${response.statusText}`,
-      )
-      ;(error as any).statusCode = response.status
-      ;(error as any).body = errorBody
-      throw error
-    }
-
-    return (await response.json()) as T
-  }
-}
-```
-
----
-
-## 🏢 Implementing the `SupplierClient`
-
-The `SupplierClient` extends `BaseClient` and exposes strongly typed methods for the 2 tools:
-
-### Blueprint: `src/clients/supplier-client.ts`
-
-```typescript
-import { BaseClient } from "./base-client.js"
-
-export interface Offer {
-  id: string
-  supplierId: string
-  title: string
-  description: string
-  status: "ACTIVE" | "INACTIVE" | "DRAFT"
-  price: number
-  currency: string
-  updatedAt: string
+export interface TokenResponse {
+  readonly access_token: string
+  readonly token_type?: string
+  readonly expires_in?: number
+  readonly scope?: string
 }
 
-export interface ListOffersParams {
-  supplierId: string
-  status?: string
-  page?: number
-  size?: number
-}
+export type AxiosRequestInterceptor = (
+  config: InternalAxiosRequestConfig,
+) => Promise<InternalAxiosRequestConfig>
 
-export interface ListOffersResponse {
-  items: Offer[]
-  pagination: {
-    page: number
-    size: number
-    total: number
-  }
-}
+const DEFAULT_GRACE_PERIOD_SECONDS = 30
 
-export class SupplierClient extends BaseClient {
-  async listOffers(params: ListOffersParams): Promise<ListOffersResponse> {
-    const query = new URLSearchParams({
-      supplier_id: params.supplierId,
-      page: String(params.page ?? 1),
-      size: String(params.size ?? 20),
-    })
-    if (params.status) {
-      query.append("status", params.status)
-    }
+export function createOAuthInterceptor(
+  options: OAuthClientCredentialsOptions,
+): AxiosRequestInterceptor {
+  const {
+    tokenUrl,
+    clientId,
+    clientSecret,
+    scope,
+    gracePeriodSeconds = DEFAULT_GRACE_PERIOD_SECONDS,
+  } = options
 
-    return this.request<ListOffersResponse>(
-      `/s2s/v1/offers?${query.toString()}`,
-      {
-        method: "GET",
-      },
+  // 1. Configure the OAuth client credentials fetcher
+  const getCredentials: (scope?: string) => Promise<TokenResponse> =
+    clientCredentials(
+      axios.create(),
+      tokenUrl,
+      clientId,
+      clientSecret,
+      scope,
     )
+
+  // 2. Wrap in an in-memory cache with safe TTL clock-skew handling
+  const getToken = axiosTokenProvider.tokenCache<TokenResponse>(
+    getCredentials,
+    {
+      getMaxAge: (response: TokenResponse): number => {
+        const expiresInSeconds = response.expires_in ?? 3600 // fallback to 1 hour
+        const safeLifetimeSeconds = Math.max(
+          expiresInSeconds - gracePeriodSeconds,
+          10,
+        )
+        return safeLifetimeSeconds * 1000 // milliseconds
+      },
+    },
+  )
+
+  // 3. Create the interceptor function that injects Authorization: Bearer <token>
+  const provider = axiosTokenProvider({
+    getToken,
+    headerFormatter: (tokenData: unknown) => {
+      const token = (tokenData as TokenResponse | null)?.access_token
+      return token ? `Bearer ${token}` : ""
+    },
+  })
+
+  return async (config) => {
+    return (await provider(config)) as InternalAxiosRequestConfig
+  }
+}
+```
+
+### Key Responsibilities Handled:
+- **Clock Skew (Grace Period)**: Refreshes the token 30 seconds before upstream expiration to prevent in-flight 401s.
+- **In-Memory Caching**: Caches the token in memory across requests; `axios.create()` is called only when the token expires.
+- **Header Injection**: Automatically formats and adds `Authorization: Bearer <token>` to all outgoing HTTP requests.
+
+---
+
+## 📐 Part 2: OpenAPI Client Generation Pipeline
+
+To ensure compile-time type safety and avoid manual API path typos, the supplier client is generated directly from the OpenAPI specification using **`openapicmd`** and **`openapi-client-axios`**.
+
+### 1. Schema Generation Scripts in `package.json`
+
+```json
+"scripts": {
+  "schema:fetch:offers": "openapi read --bundle --dereference --json http://localhost:8080/openapi.json > ./src/gen/supplier-offers.openapi.json",
+  "schema:runtime:offers": "openapi read --strip openapi_client_axios --dereference --remove-unreferenced --json ./src/gen/supplier-offers.openapi.json > ./src/gen/supplier-offers.openapi-runtime.json",
+  "schema:types:offers": "openapi typegen --client ./src/gen/supplier-offers.openapi.json > src/types/supplier-offers.gen.d.ts",
+  "schema:generate:offers": "npm run schema:fetch:offers && npm run schema:runtime:offers && npm run schema:types:offers"
+}
+```
+
+### 2. Breakdown of the 3 Stages:
+
+| Stage | Command | Purpose |
+|---|---|---|
+| **1. Fetch & Bundle** | `openapi read --bundle --dereference` | Resolves all internal/external `$ref` pointers into a single complete JSON schema. |
+| **2. Runtime Optimization** | `openapi read --strip openapi_client_axios --remove-unreferenced` | Strips out markdown descriptions, schemas, and unused elements, reducing file size by 98% for lightweight runtime loading. |
+| **3. Client Typegen** | `openapi typegen --client` | Generates TypeScript interfaces (`Client as OffersClient`, `OperationMethods`, parameters, and response bodies). |
+
+---
+
+## 🏭 Part 3: The Factory: `src/clients/offers.ts`
+
+The factory function initializes the `OpenAPIClientAxios` instance, configures timeouts and base URLs, and attaches the OAuth token interceptor.
+
+```typescript
+import OfferClientDefinition from "@/gen/supplier-offers.openapi-runtime.json" with { type: "json" };
+import type { Client as OffersClient } from "@/types/supplier-offers.gen";
+import OpenAPIClientAxios from "openapi-client-axios";
+import type { AxiosRequestInterceptor } from "../auth/client-credentials.js";
+
+const DEFAULT_TIMEOUT_MS = 5000; // 5 seconds
+
+export type OfferClientConfiguration = Omit<
+  ConstructorParameters<typeof OpenAPIClientAxios>[0],
+  "definition"
+>;
+
+export async function NewOffersClient(
+  options?: OfferClientConfiguration,
+  tokenProvider?: AxiosRequestInterceptor,
+): Promise<OffersClient> {
+  const api = new OpenAPIClientAxios({
+    ...options,
+    axiosConfigDefaults: {
+      timeout: DEFAULT_TIMEOUT_MS,
+      ...options?.axiosConfigDefaults,
+    },
+    definition: OfferClientDefinition,
+  });
+
+  const client = await api.init<OffersClient>();
+
+  // Attach S2S OAuth token interceptor to client
+  if (tokenProvider) {
+    client.interceptors.request.use(tokenProvider);
   }
 
-  async getOfferById(offerId: string): Promise<Offer> {
-    return this.request<Offer>(
-      `/s2s/v1/offers/${encodeURIComponent(offerId)}`,
-      {
-        method: "GET",
-      },
-    )
-  }
+  return client;
 }
 ```
 
 ---
 
-Next Step: **[05. Implementing the 2 MCP Tools](./05-tools-implementation.md)**
+## 🛠️ Part 4: Calling the Client in MCP Tools
+
+Once initialized, MCP tools interact with the upstream API with 100% type safety and autocompletion:
+
+```typescript
+import { NewOffersClient } from "../clients/offers.js";
+import { createOAuthInterceptor } from "../auth/client-credentials.js";
+import { config } from "../config.js";
+
+// 1. Create the S2S OAuth interceptor
+const oauthInterceptor = createOAuthInterceptor({
+  tokenUrl: config.UPSTREAM_OAUTH_TOKEN_URL,
+  clientId: config.UPSTREAM_CLIENT_ID,
+  clientSecret: config.UPSTREAM_CLIENT_SECRET,
+  scope: "offers.read",
+});
+
+// 2. Instantiate the typed OpenAPI client
+const offersClient = await NewOffersClient(
+  {
+    axiosConfigDefaults: {
+      baseURL: config.UPSTREAM_BASE_URL,
+    },
+  },
+  oauthInterceptor,
+);
+
+// 3. Fully typed method calls:
+// Tool 1: List offers for supplier
+const listResponse = await offersClient.listOffers({
+  "filter[supplier_id]": "supp-100",
+  page_size: 20,
+});
+console.log(listResponse.data);
+
+// Tool 2: Get single offer by ID
+const offerResponse = await offersClient.getOffer({
+  offer_id: "off-101",
+});
+console.log(offerResponse.data);
+```
+
+---
+
+## 🧪 Part 5: Testing Strategy
+
+The outbound auth and client layers are verified with offline unit tests:
+1. **Interceptor Tests** (`src/auth/client-credentials.test.ts`):
+   - Header injection verification (`Authorization: Bearer <token>`).
+   - In-memory cache hit (asserts token endpoint is invoked only once).
+   - Clock-skew & TTL expiration simulation using `vi.useFakeTimers()`.
+   - Fallback when `expires_in` is omitted.
+2. **OpenAPI Client Integration Tests** (`src/clients/offers.test.ts`):
+   - Mocks the underlying Axios adapter using `axios-mock-adapter` or Vitest spies.
+   - Verifies path parameter injection (`/s2s/v1/offers/{offer_id}`) and query string serialization.
+
+---
+
+Next Step: **[05. Implementing the MCP Tools](./05-tools-implementation.md)**

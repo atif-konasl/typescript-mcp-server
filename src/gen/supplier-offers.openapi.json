@@ -1,0 +1,460 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Supplier Offers S2S API",
+    "version": "1.0.0",
+    "description": "Upstream S2S API for managing supplier product offers."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local mock upstream server"
+    }
+  ],
+  "paths": {
+    "/s2s/v1/offers": {
+      "get": {
+        "operationId": "listOffers",
+        "summary": "List supplier offers",
+        "description": "Returns a paginated list of offers, optionally filtered by supplier_id and status.",
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter offers by supplier ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter offers by publication status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "INACTIVE",
+                "DRAFT"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page number (1-indexed)",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "Number of items per page",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved offers list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "size"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "supplier_id",
+                          "title",
+                          "status",
+                          "price",
+                          "currency",
+                          "updated_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "off-101"
+                          },
+                          "supplier_id": {
+                            "type": "string",
+                            "example": "supp-100"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "5-Axis CNC Milling Center VMC-850"
+                          },
+                          "description": {
+                            "type": "string",
+                            "example": "High-precision vertical machining center for aerospace and automotive parts."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "ACTIVE",
+                              "INACTIVE",
+                              "DRAFT"
+                            ],
+                            "example": "ACTIVE"
+                          },
+                          "price": {
+                            "type": "number",
+                            "example": 89500
+                          },
+                          "currency": {
+                            "type": "string",
+                            "example": "EUR"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "example": "2026-10-15T09:30:00Z"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "example": 3
+                    },
+                    "page": {
+                      "type": "integer",
+                      "example": 1
+                    },
+                    "size": {
+                      "type": "integer",
+                      "example": 20
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Offer with ID off-999 not found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/s2s/v1/offers/{offer_id}": {
+      "get": {
+        "operationId": "getOffer",
+        "summary": "Get offer by ID",
+        "description": "Retrieves detailed information for a single offer by its unique offer_id.",
+        "parameters": [
+          {
+            "name": "offer_id",
+            "in": "path",
+            "required": true,
+            "description": "Unique ID of the offer",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved offer details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "supplier_id",
+                    "title",
+                    "status",
+                    "price",
+                    "currency",
+                    "updated_at"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "off-101"
+                    },
+                    "supplier_id": {
+                      "type": "string",
+                      "example": "supp-100"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "5-Axis CNC Milling Center VMC-850"
+                    },
+                    "description": {
+                      "type": "string",
+                      "example": "High-precision vertical machining center for aerospace and automotive parts."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ACTIVE",
+                        "INACTIVE",
+                        "DRAFT"
+                      ],
+                      "example": "ACTIVE"
+                    },
+                    "price": {
+                      "type": "number",
+                      "example": 89500
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "EUR"
+                    },
+                    "updated_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-10-15T09:30:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Offer with ID off-999 not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Offer not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "message"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Offer with ID off-999 not found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Offer": {
+        "type": "object",
+        "required": [
+          "id",
+          "supplier_id",
+          "title",
+          "status",
+          "price",
+          "currency",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "off-101"
+          },
+          "supplier_id": {
+            "type": "string",
+            "example": "supp-100"
+          },
+          "title": {
+            "type": "string",
+            "example": "5-Axis CNC Milling Center VMC-850"
+          },
+          "description": {
+            "type": "string",
+            "example": "High-precision vertical machining center for aerospace and automotive parts."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "DRAFT"
+            ],
+            "example": "ACTIVE"
+          },
+          "price": {
+            "type": "number",
+            "example": 89500
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-15T09:30:00Z"
+          }
+        }
+      },
+      "OfferListResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "supplier_id",
+                "title",
+                "status",
+                "price",
+                "currency",
+                "updated_at"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "example": "off-101"
+                },
+                "supplier_id": {
+                  "type": "string",
+                  "example": "supp-100"
+                },
+                "title": {
+                  "type": "string",
+                  "example": "5-Axis CNC Milling Center VMC-850"
+                },
+                "description": {
+                  "type": "string",
+                  "example": "High-precision vertical machining center for aerospace and automotive parts."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ACTIVE",
+                    "INACTIVE",
+                    "DRAFT"
+                  ],
+                  "example": "ACTIVE"
+                },
+                "price": {
+                  "type": "number",
+                  "example": 89500
+                },
+                "currency": {
+                  "type": "string",
+                  "example": "EUR"
+                },
+                "updated_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "example": "2026-10-15T09:30:00Z"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 3
+          },
+          "page": {
+            "type": "integer",
+            "example": 1
+          },
+          "size": {
+            "type": "integer",
+            "example": 20
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "example": "Offer with ID off-999 not found"
+          }
+        }
+      }
+    }
+  }
+}
