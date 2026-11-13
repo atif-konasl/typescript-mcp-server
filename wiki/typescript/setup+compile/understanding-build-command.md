@@ -13,6 +13,7 @@ This guide breaks down the following build script defined in your `package.json`
 ## ⚡ High-Level Summary
 
 In one sentence:
+
 > **This command takes your TypeScript source code starting at `src/index.ts`, compiles and bundles it into modern ECMAScript Module (`esm`) JavaScript in `dist/`, generates `.d.ts` type declaration files, and cleans up old build artifacts before doing so.**
 
 ---
@@ -32,6 +33,7 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ---
 
 ### 1. `tsup` (The Bundler)
+
 - **What is it?** `tsup` is a zero-config, ultra-fast TypeScript bundler created by Egoist.
 - **Under the hood**: It is powered by **`esbuild`** (a bundler written in Go that compiles code 10x to 100x faster than traditional tools like Webpack, Rollup, or `tsc`).
 - **Why use it instead of just `tsc` (TypeScript Compiler)?**
@@ -41,6 +43,7 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ---
 
 ### 2. `src/index.ts` (The Entry Point)
+
 - Specifies the root file of your application.
 - `tsup` reads `src/index.ts`, analyzes all its `import` statements (e.g., `import { config } from "./config.js"`), and traverses your entire codebase dependency tree to bundle all internal modules into the output.
 - **Output target**: By default, it generates `dist/index.js`.
@@ -48,6 +51,7 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ---
 
 ### 3. `--format esm` (Output Module Format)
+
 - Node.js historically used **CommonJS** (`require()` and `module.exports`).
 - Modern JavaScript and Node.js (v16+) use standard **ESM (ECMAScript Modules)** (`import` and `export`).
 - `--format esm` explicitly tells `tsup` to emit modern ESM syntax.
@@ -62,6 +66,7 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ---
 
 ### 4. `--dts` (Declaration Files Generation)
+
 - **The problem with fast compilers**: Tools like `esbuild` and `swc` achieve their extreme speed by simply stripping out TypeScript types without type-checking or generating `.d.ts` files.
 - **The solution**: Passing `--dts` instructs `tsup` to spin up the official TypeScript compiler (`tsc`) in the background specifically to extract and emit **type definition files** (`dist/index.d.ts`).
 - **Why this is useful**:
@@ -71,6 +76,7 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ---
 
 ### 5. `--clean` (Wipe Output Directory)
+
 - Before creating a new build, `tsup` removes everything currently inside the `dist/` directory.
 - **Why is this critical?**
   - Without `--clean`, if you rename `src/old-client.ts` to `src/new-client.ts`, the old `dist/old-client.js` file remains in `dist/`.
@@ -82,11 +88,13 @@ tsup   src/index.ts   --format esm   --dts   --clean
 ## 🏗️ What the Build Output Looks Like
 
 When you execute:
+
 ```bash
 npm run build
 ```
 
 Your project directory goes from this:
+
 ```
 src/
 ├── index.ts
@@ -103,6 +111,7 @@ src/
 ```
 
 To this:
+
 ```
 dist/
 ├── index.js       # The bundled ESM JavaScript file (production runtime)
@@ -110,6 +119,7 @@ dist/
 ```
 
 You can then run the built application in production with zero TypeScript dependencies:
+
 ```bash
 node dist/index.js
 ```
@@ -120,11 +130,11 @@ node dist/index.js
 
 Understanding the role of each tool in your TypeScript toolbox:
 
-| Tool | Primary Purpose | Speed | When to Use |
-|---|---|---|---|
-| **`tsup`** | Production Bundler | ⚡⚡ Blazing fast (`esbuild`) | `npm run build` (Prepares code for production deployment) |
-| **`tsx`** | Dev Runtime Executor | ⚡⚡ Blazing fast | `npm run dev` (Runs `.ts` files on the fly during development with hot reload) |
-| **`tsc`** | Type Checker | 🐢 Slower (checks all types) | `npm run type-check` (`tsc --noEmit`) to verify strict type correctness |
+| Tool       | Primary Purpose      | Speed                         | When to Use                                                                    |
+| ---------- | -------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| **`tsup`** | Production Bundler   | ⚡⚡ Blazing fast (`esbuild`) | `npm run build` (Prepares code for production deployment)                      |
+| **`tsx`**  | Dev Runtime Executor | ⚡⚡ Blazing fast             | `npm run dev` (Runs `.ts` files on the fly during development with hot reload) |
+| **`tsc`**  | Type Checker         | 🐢 Slower (checks all types)  | `npm run type-check` (`tsc --noEmit`) to verify strict type correctness        |
 
 ---
 

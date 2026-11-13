@@ -19,12 +19,12 @@ When configuring TypeScript for a modern backend (like our MCP Server), these fo
 
 To never confuse them again, remember what question each setting answers:
 
-| Option | The Question It Answers | Real-World Analogy |
-|---|---|---|
-| **`target`** | *"How new or old is the JavaScript engine running my code?"* | The engine inside the car (V8 engine in Node 20). |
-| **`module`** | *"What syntax should imports and exports be compiled into?"* | The grammar of the language (English vs. French). |
-| **`moduleResolution`** | *"How does TypeScript look up and find the files I import?"* | The GPS / map algorithm used to locate addresses. |
-| **`lib`** | *"What global variables and APIs exist in my environment?"* | The built-in dictionary of known words (`Array`, `Error`, `window`). |
+| Option                 | The Question It Answers                                      | Real-World Analogy                                                   |
+| ---------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| **`target`**           | _"How new or old is the JavaScript engine running my code?"_ | The engine inside the car (V8 engine in Node 20).                    |
+| **`module`**           | _"What syntax should imports and exports be compiled into?"_ | The grammar of the language (English vs. French).                    |
+| **`moduleResolution`** | _"How does TypeScript look up and find the files I import?"_ | The GPS / map algorithm used to locate addresses.                    |
+| **`lib`**              | _"What global variables and APIs exist in my environment?"_  | The built-in dictionary of known words (`Array`, `Error`, `window`). |
 
 ---
 
@@ -35,11 +35,12 @@ To never confuse them again, remember what question each setting answers:
 ```
 
 ### What it does:
+
 Determines the **version of ECMAScript (JavaScript)** the compiler outputs in `dist/`.
 
 - If your code uses a newer feature (like class fields or top-level `await`) and `target` is set to an older version (e.g. `ES5`), TypeScript will **downlevel** it: writing large, clunky polyfill functions to emulate that feature in ancient JavaScript engines.
 - Since Node.js 18, 20, and 22 natively support **ES2022**, setting `"target": "ES2022"` tells TypeScript:
-  > *"Node already knows how to run modern JavaScript natively. Don't downlevel or bloat my code with compatibility helpers."*
+  > _"Node already knows how to run modern JavaScript natively. Don't downlevel or bloat my code with compatibility helpers."_
 
 ---
 
@@ -50,14 +51,18 @@ Determines the **version of ECMAScript (JavaScript)** the compiler outputs in `d
 ```
 
 ### What it does:
+
 Determines **what module system syntax** is emitted in the compiled output.
 
 Historically, the JavaScript ecosystem has two competing module systems:
+
 1. **CommonJS (CJS)**: Legacy Node.js format using `require()` and `module.exports`.
 2. **ECMAScript Modules (ESM)**: Official web standard using `import` and `export`.
 
 ### What does `"NodeNext"` mean?
+
 Node.js is now a "dual-module" runtime (it supports both ESM and CJS in the same project). Setting `"module": "NodeNext"` instructs TypeScript to mirror modern Node.js module rules:
+
 - Files are treated as **ESM** if `package.json` contains `"type": "module"`, or if the file ends in `.mts`.
 - Files are treated as **CJS** if the file ends in `.cts`.
 - Allows using top-level `await` inside ESM files.
@@ -71,16 +76,20 @@ Node.js is now a "dual-module" runtime (it supports both ESM and CJS in the same
 ```
 
 ### What it does:
+
 When you write:
+
 ```typescript
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { config } from "./config.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { config } from "./config.js"
 ```
-TypeScript must answer: *"Where on my disk does this file actually live?"*
+
+TypeScript must answer: _"Where on my disk does this file actually live?"_
 
 The `moduleResolution` setting determines the **strategy / algorithm** used to resolve that import path.
 
 ### The Evolution of Resolution Strategies:
+
 1. **`node10` (Legacy / Classic)**:
    - The original Node.js CommonJS resolution.
    - Looks for `node_modules/<pkg>/index.js` or checks the `"main"` field in `package.json`.
@@ -105,11 +114,13 @@ The `moduleResolution` setting determines the **strategy / algorithm** used to r
 ```
 
 ### What it does:
+
 Defines which **global API type definitions** TypeScript automatically loads into memory.
 
 TypeScript only type-checks; it does **not** inject runtime polyfills. `lib` tells the compiler what built-in objects it can assume exist globally at runtime.
 
 ### Why not include `"DOM"`?
+
 - If you were building a React or Vue frontend, you would configure:
   ```json
   "lib": ["ES2022", "DOM", "DOM.Iterable"]

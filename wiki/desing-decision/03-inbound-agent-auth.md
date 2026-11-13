@@ -10,12 +10,14 @@ There are two primary ways an AI Agent delivers an auth-token to an MCP server:
 
 1. **Transport Header (Streamable HTTP / SSE)**:
    The agent or gateway adds an HTTP header:
+
    ```http
    POST /mcp HTTP/1.1
    Authorization: Bearer <agent-auth-token>
    Content-Type: application/json
    ```
-   *Advantage*: Standard HTTP practice; mirrors the Python reference (`TokenValidationMiddleware`).
+
+   _Advantage_: Standard HTTP practice; mirrors the Python reference (`TokenValidationMiddleware`).
 
 2. **Tool Argument (JSON-RPC `tools/call`)**:
    The agent passes `authToken` directly inside the tool arguments:
@@ -32,10 +34,12 @@ There are two primary ways an AI Agent delivers an auth-token to an MCP server:
      }
    }
    ```
-   *Advantage*: Works across all transports (including standard I/O `stdio` where HTTP headers do not exist).
+   _Advantage_: Works across all transports (including standard I/O `stdio` where HTTP headers do not exist).
 
 ### 🏆 Recommended Best Practice: The Hybrid Pattern
+
 Support **both**:
+
 - The HTTP middleware extracts `Authorization: Bearer <token>` (or `x-auth-token`) from the incoming HTTP request.
 - The tool handler also accepts an optional `authToken?: string` parameter.
 - The server checks: `token = args.authToken || context.getBearerToken()`. If neither is present, it rejects the request with an authentication error.
@@ -45,6 +49,7 @@ Support **both**:
 ## 🧵 Request Context with `AsyncLocalStorage`
 
 In Python, `contextvars` is used to store request-scoped variables without passing them down every function signature:
+
 ```python
 # Python reference (app/context.py)
 _current_access_token: contextvars.ContextVar[AccessToken | None] = contextvars.ContextVar(...)
@@ -53,39 +58,40 @@ _current_access_token: contextvars.ContextVar[AccessToken | None] = contextvars.
 In Node.js, the standard equivalent is **`AsyncLocalStorage`** from `node:async_hooks`. Because Node.js handles multiple concurrent asynchronous requests on a single thread, global variables would lead to race conditions and cross-request contamination. `AsyncLocalStorage` isolates state per async execution chain.
 
 ### Blueprint: `src/context/request-context.ts`
+
 ```typescript
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from "node:async_hooks"
 
 export interface AgentSession {
-  token: string;
-  userId: string;
-  supplierId: string;
-  scopes: string[];
-  expiresAt?: number;
+  token: string
+  userId: string
+  supplierId: string
+  scopes: string[]
+  expiresAt?: number
 }
 
-const storage = new AsyncLocalStorage<AgentSession>();
+const storage = new AsyncLocalStorage<AgentSession>()
 
 export const RequestContext = {
   /** Run an async callback within an authenticated session context */
   run<T>(session: AgentSession, callback: () => Promise<T>): Promise<T> {
-    return storage.run(session, callback);
+    return storage.run(session, callback)
   },
 
   /** Get the current authenticated agent session (or undefined if unauthenticated) */
   current(): AgentSession | undefined {
-    return storage.getStore();
+    return storage.getStore()
   },
 
   /** Require an active session or throw an error */
   require(): AgentSession {
-    const session = storage.getStore();
+    const session = storage.getStore()
     if (!session) {
-      throw new Error("Unauthorized: No authenticated agent session found.");
+      throw new Error("Unauthorized: No authenticated agent session found.")
     }
-    return session;
-  }
-};
+    return session
+  },
+}
 ```
 
 ---
@@ -95,6 +101,7 @@ export const RequestContext = {
 In the reference repo (`app/auth.py`), the gateway uses standard **RFC 7662 Token Introspection** to verify inbound tokens against an identity server (e.g. Hydra, Keycloak, or Auth0).
 
 ### How RFC 7662 Works
+
 1. Gateway receives agent token `T`.
 2. Gateway sends `POST /oauth/introspect` with body `token=T`.
 3. Identity server responds:
@@ -110,26 +117,30 @@ In the reference repo (`app/auth.py`), the gateway uses standard **RFC 7662 Toke
    If the token is invalid, revoked, or expired, it returns `{ "active": false }`.
 
 ### Token Verification Blueprint: `src/auth/introspector.ts`
+
 ```typescript
-import crypto from "node:crypto";
-import { AgentSession } from "../context/request-context.js";
+import crypto from "node:crypto"
+import { AgentSession } from "../context/request-context.js"
 
 export class TokenIntrospector {
-  private cache = new Map<string, { session: AgentSession; expiresAt: number }>();
+  private cache = new Map<
+    string,
+    { session: AgentSession; expiresAt: number }
+  >()
 
   constructor(
     private introspectionUrl: string,
-    private cacheTtlSeconds: number = 300
+    private cacheTtlSeconds: number = 300,
   ) {}
 
   async verify(token: string): Promise<AgentSession | null> {
-    const cacheKey = crypto.createHash("sha256").update(token).digest("hex");
-    const now = Date.now();
+    const cacheKey = crypto.createHash("sha256").update(token).digest("hex")
+    const now = Date.now()
 
     // 1. Check in-memory cache to prevent flooding the auth server
-    const cached = this.cache.get(cacheKey);
+    const cached = this.cache.get(cacheKey)
     if (cached && cached.expiresAt > now) {
-      return cached.session;
+      return cached.session
     }
 
     // 2. Call RFC 7662 Introspection endpoint
@@ -138,25 +149,25 @@ export class TokenIntrospector {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "Accept": "application/json",
+          Accept: "application/json",
         },
         body: new URLSearchParams({ token, token_type_hint: "access_token" }),
-      });
+      })
 
       if (!response.ok) {
-        return null;
+        return null
       }
 
       const body = (await response.json()) as {
-        active: boolean;
-        sub?: string;
-        supplier_id?: string;
-        scope?: string;
-        exp?: number;
-      };
+        active: boolean
+        sub?: string
+        supplier_id?: string
+        scope?: string
+        exp?: number
+      }
 
       if (!body.active) {
-        return null;
+        return null
       }
 
       const session: AgentSession = {
@@ -165,16 +176,16 @@ export class TokenIntrospector {
         supplierId: body.supplier_id || "",
         scopes: body.scope ? body.scope.split(" ") : [],
         expiresAt: body.exp ? body.exp * 1000 : undefined,
-      };
+      }
 
       // 3. Cache valid session
-      const ttl = Math.min(this.cacheTtlSeconds * 1000, 3600 * 1000);
-      this.cache.set(cacheKey, { session, expiresAt: now + ttl });
+      const ttl = Math.min(this.cacheTtlSeconds * 1000, 3600 * 1000)
+      this.cache.set(cacheKey, { session, expiresAt: now + ttl })
 
-      return session;
+      return session
     } catch (error) {
-      console.error("Introspection network failure:", error);
-      return null;
+      console.error("Introspection network failure:", error)
+      return null
     }
   }
 }
@@ -188,40 +199,46 @@ In Express, wrap incoming `/mcp` requests with the token verification middleware
 
 ```typescript
 // Blueprint for src/middleware/auth-middleware.ts
-import { Request, Response, NextFunction } from "express";
-import { TokenIntrospector } from "../auth/introspector.js";
-import { RequestContext } from "../context/request-context.js";
+import { Request, Response, NextFunction } from "express"
+import { TokenIntrospector } from "../auth/introspector.js"
+import { RequestContext } from "../context/request-context.js"
 
 export function createAuthMiddleware(introspector: TokenIntrospector) {
   return async (req: Request, res: Response, next: NextFunction) => {
     // 1. Extract Bearer token from headers
-    const authHeader = req.headers["authorization"] || req.headers["x-auth-token"];
-    let token: string | undefined;
+    const authHeader =
+      req.headers["authorization"] || req.headers["x-auth-token"]
+    let token: string | undefined
 
     if (typeof authHeader === "string") {
-      token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader.trim();
+      token = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7).trim()
+        : authHeader.trim()
     }
 
     if (!token) {
       // Continue unauthenticated; individual tools requiring auth will validate
-      return next();
+      return next()
     }
 
     // 2. Validate token
-    const session = await introspector.verify(token);
+    const session = await introspector.verify(token)
     if (!session) {
       return res.status(401).json({
         jsonrpc: "2.0",
         id: null,
-        error: { code: -32001, message: "Authentication failed: token invalid or expired" }
-      });
+        error: {
+          code: -32001,
+          message: "Authentication failed: token invalid or expired",
+        },
+      })
     }
 
     // 3. Bind session to current async context
     RequestContext.run(session, () => {
-      next();
-    });
-  };
+      next()
+    })
+  }
 }
 ```
 
@@ -232,18 +249,25 @@ export function createAuthMiddleware(introspector: TokenIntrospector) {
 In your tool handlers, you can enforce that the caller has a valid token, and optionally enforce that the requested `supplierId` matches the authenticated `supplierId`:
 
 ```typescript
-export function assertAuthorizedSupplier(targetSupplierId: string, directToken?: string): void {
-  const session = RequestContext.current();
+export function assertAuthorizedSupplier(
+  targetSupplierId: string,
+  directToken?: string,
+): void {
+  const session = RequestContext.current()
 
   if (!session && !directToken) {
-    throw new Error("Missing authentication: You must provide an auth-token.");
+    throw new Error("Missing authentication: You must provide an auth-token.")
   }
 
   // If session is present and claims a supplierId, enforce tenant isolation
-  if (session && session.supplierId && session.supplierId !== targetSupplierId) {
+  if (
+    session &&
+    session.supplierId &&
+    session.supplierId !== targetSupplierId
+  ) {
     throw new Error(
-      `Forbidden: Your token (${session.supplierId}) is not authorized for supplier '${targetSupplierId}'.`
-    );
+      `Forbidden: Your token (${session.supplierId}) is not authorized for supplier '${targetSupplierId}'.`,
+    )
   }
 }
 ```

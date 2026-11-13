@@ -10,23 +10,23 @@ This guide explains what the `RequestContext` construct represents, why it is wr
 export const RequestContext = {
   /** Run an async callback within an authenticated session context */
   run<T>(session: AgentSession, callback: () => Promise<T>): Promise<T> {
-    return storage.run(session, callback);
+    return storage.run(session, callback)
   },
 
   /** Get the current authenticated agent session (or undefined if unauthenticated) */
   current(): AgentSession | undefined {
-    return storage.getStore();
+    return storage.getStore()
   },
 
   /** Require an active session or throw an error */
   require(): AgentSession {
-    const session = storage.getStore();
+    const session = storage.getStore()
     if (!session) {
-      throw new Error("Unauthorized: No authenticated agent session found.");
+      throw new Error("Unauthorized: No authenticated agent session found.")
     }
-    return session;
-  }
-};
+    return session
+  },
+}
 ```
 
 ---
@@ -36,15 +36,18 @@ export const RequestContext = {
 Syntactically, `RequestContext` is **neither a class nor a code block**. It is a **plain JavaScript Object Literal** containing functions as properties.
 
 In JavaScript and TypeScript:
+
 ```typescript
 const MyObject = {
   myMethod() { ... }
 };
 ```
+
 When exported, this object functions as a **Static Namespace / Module**. You invoke its methods using dot notation:
+
 ```typescript
-RequestContext.run(session, callback);
-const session = RequestContext.current();
+RequestContext.run(session, callback)
+const session = RequestContext.current()
 ```
 
 ---
@@ -59,19 +62,19 @@ export class RequestContext {
   private constructor() {} // Prevent instantiation
 
   static run<T>(session: AgentSession, callback: () => Promise<T>): Promise<T> {
-    return storage.run(session, callback);
+    return storage.run(session, callback)
   }
 
   static current(): AgentSession | undefined {
-    return storage.getStore();
+    return storage.getStore()
   }
 
   static require(): AgentSession {
-    const session = storage.getStore();
+    const session = storage.getStore()
     if (!session) {
-      throw new Error("Unauthorized: No authenticated agent session found.");
+      throw new Error("Unauthorized: No authenticated agent session found.")
     }
-    return session;
+    return session
   }
 }
 ```
@@ -82,12 +85,12 @@ export class RequestContext {
 
 While both approaches result in identical caller syntax (`RequestContext.current()`), modern TypeScript strongly prefers the **plain object literal** (or standalone exported functions) over static-only classes:
 
-| Feature | `const RequestContext = { ... }` | `class RequestContext { static ... }` |
-|---|---|---|
-| **Syntax Boilerplate** | Minimal and clean | Verbose (`class`, `static`, private constructor) |
-| **Accidental `new` Instantiation** | Impossible (`new RequestContext()` throws error) | Possible unless you remember `private constructor()` |
-| **Compiled JavaScript** | Emits a lightweight standard object in `dist/` | Emits an entire ES6 class declaration with prototypes |
-| **Idiomatic TypeScript** | Standard JavaScript-native module design | Java-ism (unnecessary class packaging) |
+| Feature                            | `const RequestContext = { ... }`                 | `class RequestContext { static ... }`                 |
+| ---------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
+| **Syntax Boilerplate**             | Minimal and clean                                | Verbose (`class`, `static`, private constructor)      |
+| **Accidental `new` Instantiation** | Impossible (`new RequestContext()` throws error) | Possible unless you remember `private constructor()`  |
+| **Compiled JavaScript**            | Emits a lightweight standard object in `dist/`   | Emits an entire ES6 class declaration with prototypes |
+| **Idiomatic TypeScript**           | Standard JavaScript-native module design         | Java-ism (unnecessary class packaging)                |
 
 ---
 
@@ -144,11 +147,13 @@ flowchart TD
 ## 5. Deconstructing the Generic Signature: `run<T>`
 
 Notice this method signature:
+
 ```typescript
 run<T>(session: AgentSession, callback: () => Promise<T>): Promise<T>
 ```
 
 ### Why `<T>` is Used Here:
+
 - `T` is a generic type representing the **return value** of whatever function is passed into `callback`.
 - If your callback returns a number (`Promise<number>`), `run<T>` returns `Promise<number>`.
 - If your callback returns an array of offers (`Promise<Offer[]>`), `run<T>` preserves that exact type!

@@ -9,6 +9,7 @@ This plan is modeled after the architecture patterns in the Python reference pro
 ## 🎯 Project Goals
 
 By completing this project, you will master:
+
 1. **Model Context Protocol (MCP)**: How MCP servers operate over **Streamable HTTP / Server-Sent Events (SSE)** and JSON-RPC 2.0.
 2. **Two-Tier Authentication**:
    - **Inbound Auth (Agent → MCP Server)**: Enforcing that the AI agent provides an authenticated bearer token (via HTTP headers and/or tool parameters) validated via RFC 7662 introspection or JWT validation.

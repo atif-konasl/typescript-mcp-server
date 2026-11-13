@@ -8,16 +8,16 @@ This chapter analyzes the system design, contrasts it with the Python reference 
 
 In the Python reference codebase, the architecture is structured as follows:
 
-| Component | Python Reference (`supplier-backend-mcp-service`) | TypeScript Implementation (`typescript-mcp-server`) |
-|---|---|---|
-| **MCP Runtime** | `FastMCP` (Python SDK) | `@modelcontextprotocol/sdk` (Official TS SDK) |
-| **HTTP Transport** | `FastAPI` (ASGI) + Streamable HTTP `/mcp` | `Express` (or `Hono`) + SSE Transport |
-| **Request Context** | `contextvars` (`_current_access_token`) | Node.js `AsyncLocalStorage` (`RequestContext`) |
-| **Schema Validation** | `pydantic` (`Field`, `AliasChoices`) | `zod` (`z.object(...)`) |
-| **HTTP Client** | `httpx.AsyncClient` | Native `fetch` (Node 20+) or `undici` |
-| **Inbound Auth** | `TokenValidationMiddleware` (RFC 7662 Introspection) | Auth Middleware + `TokenIntrospector` |
-| **Outbound Auth** | `ClientCredentialsTokenProvider` | `ClientCredentialsTokenProvider` (Promise-based) |
-| **Testing** | `pytest` + `pytest-asyncio` | `vitest` |
+| Component             | Python Reference (`supplier-backend-mcp-service`)    | TypeScript Implementation (`typescript-mcp-server`) |
+| --------------------- | ---------------------------------------------------- | --------------------------------------------------- |
+| **MCP Runtime**       | `FastMCP` (Python SDK)                               | `@modelcontextprotocol/sdk` (Official TS SDK)       |
+| **HTTP Transport**    | `FastAPI` (ASGI) + Streamable HTTP `/mcp`            | `Express` (or `Hono`) + SSE Transport               |
+| **Request Context**   | `contextvars` (`_current_access_token`)              | Node.js `AsyncLocalStorage` (`RequestContext`)      |
+| **Schema Validation** | `pydantic` (`Field`, `AliasChoices`)                 | `zod` (`z.object(...)`)                             |
+| **HTTP Client**       | `httpx.AsyncClient`                                  | Native `fetch` (Node 20+) or `undici`               |
+| **Inbound Auth**      | `TokenValidationMiddleware` (RFC 7662 Introspection) | Auth Middleware + `TokenIntrospector`               |
+| **Outbound Auth**     | `ClientCredentialsTokenProvider`                     | `ClientCredentialsTokenProvider` (Promise-based)    |
+| **Testing**           | `pytest` + `pytest-asyncio`                          | `vitest`                                            |
 
 ---
 
@@ -54,14 +54,16 @@ sequenceDiagram
 ```
 
 ### Tier 1: Inbound Agent Authentication
+
 - **Who is authenticating?** The AI Agent calling your MCP server.
 - **Why?** Prevents unauthorized agents or unauthorized end-users from invoking supplier actions.
 - **How is it passed?**
-  1. *Transport Header*: `Authorization: Bearer <token>` on the HTTP/SSE connection.
-  2. *Tool Argument* (Optional fallback): `authToken: string` directly in the tool arguments.
+  1. _Transport Header_: `Authorization: Bearer <token>` on the HTTP/SSE connection.
+  2. _Tool Argument_ (Optional fallback): `authToken: string` directly in the tool arguments.
 - **Verification**: The MCP server validates the token against an RFC 7662 token introspection endpoint (or verifies a signed JWT). Upon successful validation, user claims (such as `supplierId` or `userId`) are bound to the current async execution context (`AsyncLocalStorage`).
 
 ### Tier 2: Outbound Service-to-Service (S2S) Authentication
+
 - **Who is authenticating?** The MCP Server itself, presenting its own credentials to the Upstream Supplier API.
 - **Why?** The upstream API does not trust or recognize the agent's inbound token; it only grants access to registered services via OAuth 2.0 Client Credentials Grant.
 - **How is it handled?**
@@ -78,6 +80,7 @@ sequenceDiagram
 To replicate the business patterns of `supplier-backend-mcp-service`, you will implement 2 core tools:
 
 ### Tool 1: `list_offers`
+
 Lists and filters offers for a given supplier.
 
 - **Description**: "List offers for a supplier with optional status filtering and pagination."
@@ -95,6 +98,7 @@ Lists and filters offers for a given supplier.
 - **Security Check**: When an inbound agent token is present, ensure the requested `supplierId` matches the authorized `supplier_id` claim in the agent's token (preventing unauthorized tenant access).
 
 ### Tool 2: `get_offer_by_id`
+
 Fetches detailed attributes of a single offer.
 
 - **Description**: "Fetch complete offer details by offer ID from the supplier backend."
@@ -115,6 +119,7 @@ Fetches detailed attributes of a single offer.
 To prevent AI agent confusion, all MCP tools should return a consistent envelope structure (matching the pattern in `supplier-backend-mcp-service`):
 
 ### Success Response
+
 ```json
 {
   "ok": true,
@@ -139,6 +144,7 @@ To prevent AI agent confusion, all MCP tools should return a consistent envelope
 ```
 
 ### Error Response
+
 ```json
 {
   "ok": false,
@@ -160,7 +166,9 @@ To prevent AI agent confusion, all MCP tools should return a consistent envelope
 ## 🔄 Failure Scenarios & Edge Cases
 
 ### Case 1: Inbound Auth Failure
+
 If the agent provides no token, or provides an invalid/expired token:
+
 ```mermaid
 sequenceDiagram
     actor Agent
@@ -172,10 +180,13 @@ sequenceDiagram
     Introspect-->>MCP: { active: false }
     MCP-->>Agent: JSON-RPC Error -32001: "Authentication failed: token invalid or expired"
 ```
+
 The request is aborted **before** any upstream call is made.
 
 ### Case 2: Outbound Upstream 401 Re-Authentication
+
 If the upstream server expires the S2S token prematurely:
+
 ```mermaid
 sequenceDiagram
     participant MCP as MCP Upstream Client

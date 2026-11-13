@@ -1,6 +1,6 @@
 # Understanding `AsyncLocalStorage`: Async State Isolation in Node.js
 
-This guide explains what **`AsyncLocalStorage`** is, what *"isolating state per async execution chain"* means, how it works under the hood, and why it is critical for building our MCP Server.
+This guide explains what **`AsyncLocalStorage`** is, what _"isolating state per async execution chain"_ means, how it works under the hood, and why it is critical for building our MCP Server.
 
 ---
 
@@ -18,16 +18,16 @@ Imagine you store the current authenticated user in a global variable:
 
 ```typescript
 // ❌ CRITICAL BUG: Global variable in a concurrent server
-let currentUser: string | null = null;
+let currentUser: string | null = null
 
 app.get("/offer", async (req, res) => {
-  currentUser = req.headers["x-user-id"] as string; // 1. Set global user
+  currentUser = req.headers["x-user-id"] as string // 1. Set global user
 
-  const offer = await fetchFromDatabase(); // 2. PAUSE (waiting for I/O)
+  const offer = await fetchFromDatabase() // 2. PAUSE (waiting for I/O)
 
   // 3. RESUME
-  res.send(`Offer data for user: ${currentUser}`);
-});
+  res.send(`Offer data for user: ${currentUser}`)
+})
 ```
 
 Here is what happens when two users (Alice and Bob) make requests at nearly the same millisecond:
@@ -38,20 +38,21 @@ sequenceDiagram
     actor Alice
     actor Bob
     participant Server as Single Node.js Thread
-    
+
     Alice->>Server: 1. Request arrives (x-user-id: "Alice")
     Note over Server: currentUser = "Alice"
     Server->>Server: Calls await fetchFromDatabase() (PAUSES Alice)
-    
+
     Bob->>Server: 2. Request arrives (x-user-id: "Bob")
     Note over Server: currentUser = "Bob" (💥 OVERWRITES ALICE!)
     Server->>Server: Calls await fetchFromDatabase() (PAUSES Bob)
-    
+
     Note over Server: Alice's database call finishes! (RESUMES Alice)
     Server-->>Alice: Responds: "Offer data for user: Bob" 😱 DATA LEAK!
 ```
 
 ### The Problem
+
 Because there is only one thread, **Bob's request overwrote Alice's global variable** while Alice was paused at `await`. When Alice resumed, she received Bob's data!
 
 ---
@@ -93,32 +94,32 @@ Even though Alice and Bob pause, resume, and interleave on the exact same CPU th
 - No matter how many times your code pauses at `await`, or how many other concurrent requests hit the server, **the data never leaks to other requests**.
 
 ```typescript
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from "node:async_hooks"
 
 interface Session {
-  userId: string;
+  userId: string
 }
 
 // 1. Create the storage container
-const asyncLocalStorage = new AsyncLocalStorage<Session>();
+const asyncLocalStorage = new AsyncLocalStorage<Session>()
 
 app.get("/offer", (req, res) => {
-  const userId = req.headers["x-user-id"] as string;
+  const userId = req.headers["x-user-id"] as string
 
   // 2. Run the request inside an isolated session
   asyncLocalStorage.run({ userId }, async () => {
     // 3. Any asynchronous function down the chain can read the store!
-    const data = await getOfferDetails();
-    res.json(data);
-  });
-});
+    const data = await getOfferDetails()
+    res.json(data)
+  })
+})
 
 async function getOfferDetails() {
-  await someDatabaseCall(); // Pauses and resumes...
+  await someDatabaseCall() // Pauses and resumes...
 
   // 4. Retrieve the store: Alice gets Alice, Bob gets Bob!
-  const session = asyncLocalStorage.getStore();
-  return { user: session?.userId, item: "CNC Milling Machine" };
+  const session = asyncLocalStorage.getStore()
+  return { user: session?.userId, item: "CNC Milling Machine" }
 }
 ```
 
@@ -141,18 +142,20 @@ async function getOfferDetails() {
 
 ## 🌍 Language Comparison: How Different Languages Solve This
 
-| Language | Execution Model | Solution |
-|---|---|---|
-| **Java** | Multi-threaded (1 thread per request) | `ThreadLocal<T>` |
-| **C# (.NET)** | Task-based asynchronous pattern | `AsyncLocal<T>` |
-| **Python** | Asyncio Event Loop | `contextvars.ContextVar` *(used in your reference repo!)* |
-| **Node.js** | Single-threaded Event Loop | `node:async_hooks` ➔ `AsyncLocalStorage` |
+| Language      | Execution Model                       | Solution                                                  |
+| ------------- | ------------------------------------- | --------------------------------------------------------- |
+| **Java**      | Multi-threaded (1 thread per request) | `ThreadLocal<T>`                                          |
+| **C# (.NET)** | Task-based asynchronous pattern       | `AsyncLocal<T>`                                           |
+| **Python**    | Asyncio Event Loop                    | `contextvars.ContextVar` _(used in your reference repo!)_ |
+| **Node.js**   | Single-threaded Event Loop            | `node:async_hooks` ➔ `AsyncLocalStorage`                  |
 
 > [!NOTE]
 > In the Python reference project (`app/context.py`), you saw:
+>
 > ```python
 > _current_access_token: contextvars.ContextVar[AccessToken | None] = contextvars.ContextVar(...)
 > ```
+>
 > `AsyncLocalStorage` in Node.js is the **exact direct counterpart** to Python's `contextvars.ContextVar`.
 
 ---
@@ -164,11 +167,11 @@ In our MCP Server ([`src/context/request-context.ts`](./../03-inbound-agent-auth
 1. When an AI Agent invokes an MCP tool, our HTTP middleware verifies the Bearer token and extracts the `supplierId`:
    ```typescript
    RequestContext.run(session, () => {
-     next();
-   });
+     next()
+   })
    ```
 2. Deep inside your tool handlers ([`src/tools/list-offers.ts`](./../05-tools-implementation.md)):
    ```typescript
-   const session = RequestContext.current();
+   const session = RequestContext.current()
    ```
 3. Even if 100 AI Agents are concurrently querying offers for 100 different suppliers, each tool execution is **guaranteed** to see only its own authenticated tenant session.

@@ -11,6 +11,7 @@ In this chapter, you will configure your TypeScript project, establish strict ty
 - **Shell**: bash or zsh
 
 Check your current versions:
+
 ```bash
 node -v   # Should be >= 20.0.0
 pnpm -v   # or npm -v
@@ -61,12 +62,14 @@ typescript-mcp-server/
 ## 📦 Dependencies Breakdown
 
 ### Production Dependencies (`dependencies`)
+
 1. `@modelcontextprotocol/sdk` (v1.x): The official TypeScript SDK implementing Model Context Protocol (Server, Transports, Tools, Prompts).
 2. `express` (v4.x) & `cors`: Fast HTTP server for hosting Streamable HTTP / Server-Sent Events (SSE).
 3. `zod` (v3.x): Runtime schema validation for environment variables and MCP tool arguments.
 4. `dotenv`: Loads `.env` file into `process.env`.
 
 ### Development Dependencies (`devDependencies`)
+
 1. `typescript` (v5.x): The TypeScript compiler.
 2. `@types/node`, `@types/express`, `@types/cors`: Static type definitions.
 3. `tsx`: Fast TypeScript executor (like `node`, but runs `.ts` files on the fly without manual compile step).
@@ -133,6 +136,7 @@ For modern Node.js ESM and `@modelcontextprotocol/sdk`, configure `tsconfig.json
 Instead of accessing `process.env.MY_VAR` randomly throughout the codebase, use a centralized config module validated with **Zod**. This guarantees the server fails fast on startup if critical secrets or URLs are missing.
 
 ### Template `.env.example`
+
 ```env
 # Server
 PORT=8000
@@ -154,12 +158,13 @@ TOKEN_CACHE_TTL_SECONDS=1800
 ```
 
 ### Zod Configuration Pattern
+
 ```typescript
 // Blueprint for src/config.ts
-import { z } from "zod";
-import dotenv from "dotenv";
+import { z } from "zod"
+import dotenv from "dotenv"
 
-dotenv.config();
+dotenv.config()
 
 const configSchema = z.object({
   PORT: z.coerce.number().default(8000),
@@ -171,9 +176,9 @@ const configSchema = z.object({
   INBOUND_AUTH_ENABLED: z.coerce.boolean().default(true),
   INTROSPECTION_URL: z.string().url(),
   TOKEN_CACHE_TTL_SECONDS: z.coerce.number().default(1800),
-});
+})
 
-export const config = configSchema.parse(process.env);
+export const config = configSchema.parse(process.env)
 ```
 
 ---

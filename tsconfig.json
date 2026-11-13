@@ -1,18 +1,18 @@
 {
-    "compilerOptions": {
-        "target": "es2022",
-        "module": "nodenext",
-        "moduleResolution": "nodenext",
-        "lib": ["es2022"],
-        "outDir": "./dist",
-        "rootDir": "./",
-        "strict": true,
-        "esModuleInterop": true,
-        "skipLibCheck": true,
-        "forceConsistentCasingInFileNames": true,
-        "resolveJsonModule": true,
-        "isolatedModules": true
-    },
-    "include": ["src/**/*.ts", "mock-upstream/**/*.ts"],
-    "exclude": ["node_modules", "dist"]
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2022"],
+    "outDir": "./dist",
+    "rootDir": "./",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*.ts", "mock-upstream/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }
